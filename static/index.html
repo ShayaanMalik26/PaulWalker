@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ChromaDB Search</title>
+    <style>
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background-color: #f0f0f0;
+        }
+        .container {
+            text-align: center;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+        }
+        input[type="text"] {
+            width: 80%;
+            padding: 10px;
+            margin: 10px 0;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+        button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            background-color: #007BFF;
+            color: white;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        ul {
+            list-style-type: none;
+            padding: 0;
+        }
+        li {
+            background: #f9f9f9;
+            margin: 5px 0;
+            padding: 10px;
+            border-radius: 4px;
+            box-shadow: 0 0 5px rgba(0, 0, 0, 0.1);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>Search ChromaDB</h2>
+        <input type="text" id="searchQuery" placeholder="Enter your search query">
+        <button onclick="searchChromaDB()">Search</button>
+        <span id="loading" style="display: none;">Loading</span>
+        <h3>Results:</h3>
+        <ul id="resultsList"></ul>
+    </div>
+
+    <script>
+        async function searchChromaDB() {
+            const query = document.getElementById("searchQuery").value;
+            if (!query) {
+                alert("Please enter a search query!");
+                return;
+            }
+            
+            // Display loading message
+            const loading = document.getElementById("loading");
+            loading.style.display = "block";
+
+            const response = await fetch(`/search?query=${encodeURIComponent(query)}`);
+            const data = await response.json();
+
+            // Display results
+            const resultsList = document.getElementById("resultsList");
+            resultsList.innerHTML = "";
+            console.log(data);
+            data.results.forEach(doc => {
+                const parsedDoc = JSON.parse(doc);
+                const listItem = document.createElement("li");
+                listItem.textContent = `Title: ${parsedDoc.patent_title}, Patent ID: ${parsedDoc.publication_number}, Abstract: ${parsedDoc.abstract}`;
+                resultsList.appendChild(listItem);
+            });
+            if(resultsList.children.length === 0) {
+                const listItem = document.createElement("li");
+                listItem.textContent = "No results found!";
+                resultsList.appendChild(listItem);
+            }
+
+            resultsList.style.display = "block";
+            loading.style.display = "none";
+        }
+    </script>
+</body>
+</html>
