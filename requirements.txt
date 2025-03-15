@@ -12,7 +12,7 @@ python-dotenv==1.0.1
 requests==2.32.3
 schedule==1.2.2
 selenium==4.29.0
-sentence-transformers==3.4.1
+sentence-transformers
 torch==2.6.0+cu118
 torchaudio==2.6.0+cu118
 torchvision==0.21.0+cu118
