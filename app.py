@@ -5,7 +5,7 @@ import chromadb
 from sentence_transformers import SentenceTransformer
 import os
 import json
-from add_embedding import load_json, generate_embeddings, store_in_chromadb
+# from add_embedding import load_json, generate_embeddings, store_in_chromadb
 
 app = FastAPI()
 
