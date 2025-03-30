@@ -18,7 +18,7 @@ CHUNK_DAYS = 10  # Number of days to process in each chunk
 
 def get_date_chunks():
     """Generate date chunks from 1900 to present"""
-    start = datetime(1700, 1, 1)
+    start = datetime(1900, 1, 1)
     end = datetime.now()
     current = start
     
@@ -72,87 +72,112 @@ def scrape_date_range(driver, start_date, end_date, existing_patents):
     """Scrape patents for a specific date range"""
     all_patent_links = []
     page_num = 0
+    max_retries = 3
     
     while True:
         current_url = construct_url(page_num, start_date, end_date)
         print(f"\nFetching page {page_num + 1} for date range: {start_date.date()} to {end_date.date()}")
         print(f"URL: {current_url}")
         
-        try:
-            driver.get(current_url)
-            time.sleep(15)  # Wait for content to load
-            
-            html_content = driver.page_source
-            patent_numbers = re.findall(r"US\d{1,11}", html_content)
-            
-            if not patent_numbers:
-                print(f"No more results found after page {page_num + 1}")
-                break
-            
-            patent_numbers = list(dict.fromkeys(patent_numbers))
-            patent_links = [f"https://patents.google.com/patent/{patent_number}" for patent_number in patent_numbers]
-            new_patents = [link for link in patent_links if link not in existing_patents]
-            
-            print(f"Patents found on page {page_num + 1}: {len(patent_links)}")
-            print(f"New patents found: {len(new_patents)}")
-            
-            save_new_patents(new_patents, existing_patents)
-            existing_patents.update(new_patents)
-            all_patent_links.extend(new_patents)
-            
-            page_num += 1
-            time.sleep(15)  # Delay between pages
-            
-        except Exception as e:
-            print(f"Error processing page {page_num + 1}: {str(e)}")
-            break
+        for retry in range(max_retries):
+            try:
+                driver.get(current_url)
+                time.sleep(15)  # Wait for content to load
+                
+                html_content = driver.page_source
+                patent_numbers = re.findall(r"US\d{1,11}", html_content)
+                
+                if not patent_numbers:
+                    print(f"No more results found after page {page_num + 1}")
+                    return all_patent_links
+                
+                patent_numbers = list(dict.fromkeys(patent_numbers))
+                patent_links = [f"https://patents.google.com/patent/{patent_number}" for patent_number in patent_numbers]
+                new_patents = [link for link in patent_links if link not in existing_patents]
+                
+                print(f"Patents found on page {page_num + 1}: {len(patent_links)}")
+                print(f"New patents found: {len(new_patents)}")
+                
+                save_new_patents(new_patents, existing_patents)
+                existing_patents.update(new_patents)
+                all_patent_links.extend(new_patents)
+                
+                page_num += 1
+                time.sleep(15)  # Delay between pages
+                break  # Success, exit retry loop
+                
+            except Exception as e:
+                print(f"Error on attempt {retry + 1}/{max_retries}: {str(e)}")
+                if retry < max_retries - 1:
+                    print("Recreating WebDriver session...")
+                    try:
+                        driver.quit()
+                    except:
+                        pass
+                    
+                    # Reinitialize the driver
+                    driver = webdriver.Chrome(
+                        service=Service("/snap/chromium/current/usr/lib/chromium-browser/chromedriver"),
+                        options=chrome_options
+                    )
+                    time.sleep(5)  # Wait before retry
+                else:
+                    print(f"Failed after {max_retries} attempts")
+                    return all_patent_links
     
     return all_patent_links
 
 def getLinks():
-    # Initialize the driver with specific ChromeDriver path
-    driver = webdriver.Chrome(
-        service=Service("/snap/chromium/current/usr/lib/chromium-browser/chromedriver"),
-        options=chrome_options
-    )
-    existing_patents = load_existing_patents()
-    print(f"Found {len(existing_patents)} existing patents in {PATENTS_FILE}")
-    
-    # Load progress
-    start_from = load_progress()
-    print(f"Resuming scraping from: {start_from.date()}")
-    
-    total_new_patents = 0
-    
-    try:
-        for start_date, end_date in get_date_chunks():
-            # Skip chunks before our resume point
-            if start_date < start_from:
-                continue
+    while True:  # Main retry loop
+        try:
+            # Initialize the driver
+            driver = webdriver.Chrome(
+                service=Service("/snap/chromium/current/usr/lib/chromium-browser/chromedriver"),
+                options=chrome_options
+            )
+            existing_patents = load_existing_patents()
+            print(f"Found {len(existing_patents)} existing patents in {PATENTS_FILE}")
+            
+            # Load progress
+            start_from = load_progress()
+            print(f"Resuming scraping from: {start_from.date()}")
+            
+            total_new_patents = 0
+            
+            for start_date, end_date in get_date_chunks():
+                if start_date < start_from:
+                    continue
+                    
+                print(f"\nProcessing date chunk: {start_date.date()} to {end_date.date()}")
                 
-            print(f"\nProcessing date chunk: {start_date.date()} to {end_date.date()}")
+                new_patents = scrape_date_range(driver, start_date, end_date, existing_patents)
+                total_new_patents += len(new_patents)
+                
+                # Save progress after each chunk
+                save_progress(end_date)
+                
+                print(f"Completed chunk. Total patents so far: {len(existing_patents)}")
+                time.sleep(15)  # Delay between chunks
             
-            new_patents = scrape_date_range(driver, start_date, end_date, existing_patents)
-            total_new_patents += len(new_patents)
+            break  # Success, exit main retry loop
             
-            # Save progress after each chunk
-            save_progress(end_date)
-            
-            print(f"Completed chunk. Total patents so far: {len(existing_patents)}")
-            
-            # Add a delay between chunks to avoid rate limiting
-            time.sleep(15)
+        except KeyboardInterrupt:
+            print("\nScraping interrupted by user. Progress has been saved.")
+            break
+        except Exception as e:
+            print(f"\nAn error occurred in main loop: {str(e)}")
+            print("Waiting 60 seconds before retrying...")
+            time.sleep(60)
+        finally:
+            try:
+                driver.quit()
+            except:
+                pass
     
-    except KeyboardInterrupt:
-        print("\nScraping interrupted by user. Progress has been saved.")
-    except Exception as e:
-        print(f"\nAn error occurred: {str(e)}")
-    finally:
-        driver.quit()
-        print(f"\nScraping completed or interrupted.")
-        print(f"Total new patents found: {total_new_patents}")
-        print(f"Total unique patents in {PATENTS_FILE}: {len(existing_patents)}")
-        return total_new_patents
+    print(f"\nScraping completed or interrupted.")
+    print(f"Total new patents found: {total_new_patents}")
+    print(f"Total unique patents in {PATENTS_FILE}: {len(existing_patents)}")
+    return total_new_patents
 
 if __name__ == "__main__":
     getLinks()
