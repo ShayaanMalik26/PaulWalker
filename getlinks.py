@@ -17,7 +17,7 @@ no_of_results = 100
 CHUNK_DAYS = 10  # Number of days to process in each chunk
 
 def get_date_chunks():
-    """Generate date chunks from 1900 to present"""
+    """Generate date chunks from 1700 to present"""
     start = datetime(1700, 1, 1)
     end = datetime.now()
     current = start
@@ -52,7 +52,7 @@ def load_progress():
             date_str = f.read().strip()
             return datetime.strptime(date_str, "%Y-%m-%d")
     except FileNotFoundError:
-        return datetime(1900, 1, 1)
+        return datetime(1700, 1, 1)
 
 def construct_url(page_num, start_date, end_date):
     formatted_start_date = start_date.strftime("%Y%m%d")
