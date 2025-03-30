@@ -15,9 +15,14 @@ load_dotenv()
 PATENTS_FILE = "patent_urls.txt"
 no_of_results = 100
 
+PAGE_LOAD_DELAY = 15  # Seconds to wait for page load
+BETWEEN_PAGES_DELAY = 10  # Seconds to wait between pages
+MAX_RETRIES = 3  # Maximum number of retries per page
+
 def get_date_range():
-    end_date = datetime.now()
-    start_date = end_date - timedelta(days=20)
+    # end_date = datetime.now()
+    end_date = datetime.now() - timedelta(days=5)  # Exclude today
+    start_date = end_date - timedelta(days=10)
     return start_date, end_date
 
 def load_existing_patents():
@@ -37,25 +42,51 @@ def construct_url(page_num, start_date, end_date):
     formatted_end_date = end_date.strftime("%Y%m%d")
     return f"https://patents.google.com/?country=US&before=publication:{formatted_end_date}&after=publication:{formatted_start_date}&language=ENGLISH&type=PATENT&num={no_of_results}&dups=language&page={page_num}"
 
+def save_scraping_state(date, page_num):
+    """Save the current scraping state"""
+    with open("recent_scraping_state.txt", "w") as f:
+        f.write(f"{date.strftime('%Y-%m-%d')},{page_num}")
+
+def load_scraping_state():
+    """Load the last scraping state"""
+    try:
+        with open("recent_scraping_state.txt", "r") as f:
+            date_str, page_num = f.read().strip().split(",")
+            return datetime.strptime(date_str, "%Y-%m-%d"), int(page_num)
+    except FileNotFoundError:
+        return None, 0
+
 # Setup Chrome options
 chrome_options = Options()
-chrome_options.add_argument("--headless")  # Run in headless mode
+chrome_options.add_argument("--headless")
 chrome_options.add_argument("--no-sandbox")
 chrome_options.add_argument("--disable-dev-shm-usage")
+chrome_options.add_argument("--disable-gpu")
+chrome_options.add_argument("--remote-debugging-port=9222")
+chrome_options.binary_location = "/snap/bin/chromium"  # Path to Chromium binary from snap
 
 def getLinks():
     # Get dynamic date range
     start_date, end_date = get_date_range()
     print(f"\nScraping patents from {start_date.date()} to {end_date.date()}")
     
-    # Initialize the driver
-    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
+    # Initialize the driver with specific ChromeDriver path
+    driver = webdriver.Chrome(
+        service=Service("/snap/chromium/current/usr/lib/chromium-browser/chromedriver"),
+        options=chrome_options
+    )
     all_patent_links = []
-    page_num = 0
     
     # Load existing patents
     existing_patents = load_existing_patents()
     print(f"Found {len(existing_patents)} existing patents in {PATENTS_FILE}")
+    
+    # Load last state
+    last_date, page_num = load_scraping_state()
+    if last_date and last_date == start_date:
+        print(f"Resuming from page {page_num + 1}")
+    else:
+        page_num = 0
     
     try:
         while True:
@@ -64,14 +95,24 @@ def getLinks():
             print(f"\nFetching page {page_num + 1}")
             print(f"URL: {current_url}")
             
-            driver.get(current_url)
-            time.sleep(15)  # Wait for content to load
-            
-            # Get the page source after JavaScript execution
-            html_content = driver.page_source
-            
-            # Use regex to find all patent numbers
-            patent_numbers = re.findall(r"US\d{1,11}", html_content)
+            retry_count = 0
+            while retry_count < MAX_RETRIES:
+                try:
+                    driver.get(current_url)
+                    time.sleep(PAGE_LOAD_DELAY)  # Wait for content to load
+                    
+                    # Get the page source after JavaScript execution
+                    html_content = driver.page_source
+                    
+                    # Use regex to find all patent numbers
+                    patent_numbers = re.findall(r"US\d{1,11}", html_content)
+                    break
+                except Exception as e:
+                    retry_count += 1
+                    print(f"Attempt {retry_count} failed: {str(e)}")
+                    if retry_count == MAX_RETRIES:
+                        raise
+                    time.sleep(PAGE_LOAD_DELAY)
             
             # If no patents found on the page, break the loop
             if not patent_numbers:
@@ -100,20 +141,23 @@ def getLinks():
             # Add to master list
             all_patent_links.extend(new_patents)  # Only extend with new patents
             
-            # Move to next page
+            # Save current state
+            save_scraping_state(start_date, page_num)
+            
+            # Move to next page with increased delay
             page_num += 1
+            time.sleep(BETWEEN_PAGES_DELAY)
             
-            # Optional: Add a delay between pages to be respectful to the server
-            time.sleep(2)
-            
-        # Print final summary
-        print(f"\nTotal new patents found: {len(all_patent_links)}")
+    except KeyboardInterrupt:
+        print("\nScraping interrupted by user. Progress has been saved.")
+    except Exception as e:
+        print(f"\nAn error occurred: {str(e)}")
+    finally:
+        driver.quit()
+        print(f"\nScraping completed or interrupted.")
+        print(f"Total new patents found: {len(all_patent_links)}")
         print(f"Total unique patents in {PATENTS_FILE}: {len(existing_patents)}")
         return all_patent_links
-
-    finally:
-        # Always close the driver
-        driver.quit()
 
 if __name__ == "__main__":
     getLinks()
