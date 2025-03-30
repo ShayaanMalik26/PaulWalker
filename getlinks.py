@@ -18,7 +18,7 @@ CHUNK_DAYS = 10  # Number of days to process in each chunk
 
 def get_date_chunks():
     """Generate date chunks from 1900 to present"""
-    start = datetime(1900, 1, 1)
+    start = datetime(1700, 1, 1)
     end = datetime.now()
     current = start
     
